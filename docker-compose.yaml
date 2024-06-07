@@ -1,0 +1,73 @@
+---
+version: "3.9"
+
+services:
+  Foscam_CodeProjectAI:
+    image: revenberg/codeprojectai:latest
+    container_name: Foscam_CodeProjectAI
+    restart: unless-stopped
+    environment:
+      - AI_HOST=192.168.2.80
+      - AI_PORT=32168
+      - FOSCAM_HOST=192.168.2.32
+      - FOSCAM_PORT=88
+      - FOSCAM_USER=
+      - FOSCAM_PASSWORD=
+      - MQTT_HOST=192.168.2.80
+      - MQTT_PORT=1883
+      - MQTT_USER=
+      - MQTT_PASSWORD=
+      - MQTT_TOPIC=CodeProjectAI
+
+  mosquitto:
+    image: eclipse-mosquitto
+    hostname: mosquitto
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - /var/docker/mosquitto:/etc/mosquitto
+      - /var/docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  CodeProjectAI:
+    image: codeproject/ai-server:arm64
+    hostname: codeproject-ai-server
+    container_name: codeproject-ai-server
+    volumes:
+      - /var/docker/codeprojectai-server/opt:/opt/codeproject/ai
+      - /var/docker/codeprojectai-server/data:/etc/codeproject/ai
+      - /var/docker/codeprojectai-server/modules:/app/modules
+    restart: unless-stopped
+    ports:
+      - "32168:32168"
+      - "5000:5000"
+    environment:
+      - TZ=Europe/Amsterdam
+
+  homeassistant:
+    image: lscr.io/linuxserver/homeassistant:latest
+    container_name: homeassistant
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - /var/docker/home-assistance/config:/config
+      - /var/docker/media:/media
+
+    ports:
+      - 80:8123
+#    devices:
+#      - /path/to/device:/path/to/device #optional
+    restart: unless-stopped
+
+  webserver:
+    image: nginx:latest
+    hostname: nginx
+    container_name: nginx
+    volumes:
+      - /var/docker/nginx/html:/usr/share/nginx/html
+    ports:
+      - "8080:80"

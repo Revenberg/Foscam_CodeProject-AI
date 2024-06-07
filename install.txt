@@ -1,0 +1,17 @@
+https://wiki.odroid.com/odroid-xu4/software/ubuntu_nas/01_basic_settings
+
+https://docs.docker.com/engine/install/ubuntu/
+
+https://www.tderflinger.com/en/how-to-install-docker-and-portainer-on-odroid-n2plus
+
+https://www.codeproject.com/Articles/5354840/How-to-Setup-CodeProject-AI-Server-with-Home-Assis
+
+
+Foscam
+curl -k -H  --silent "http://192.168.2.32:88/cgi-bin/CGIProxy.fcgi?usr=&pwd=&cmd=getFtpConfig"
+
+curl -k -H  --silent "http://192.168.2.32:88/cgi-bin/CGIProxy.fcgi?usr=&pwd=&cmd=setFtpConfig&ftpAddr=ftp://192.168.2.80&ftpPort=21&userName=&password="
+
+curl -k -H  --silent "http://192.168.2.32:88/cgi-bin/CGIProxy.fcgi?usr=&pwd=&cmd=getFtpConfig"
+curl -k -H  --silent "http://192.168.2.32:88/cgi-bin/CGIProxy.fcgi?usr=&pwd=&cmd=getMotionDetectConfig"
+
