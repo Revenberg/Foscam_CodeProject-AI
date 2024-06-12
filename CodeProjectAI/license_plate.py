@@ -13,6 +13,7 @@ import paho.mqtt.client as mqtt
 import random
 
 import datetime
+import pytz
 
 ai_host = os.getenv("AI_HOST", "" )
 ai_port = int(os.getenv("AI_PORT", "32168"))
@@ -28,6 +29,8 @@ mqtt_user = os.getenv("MQTT_USER", "" )
 mqtt_password = os.getenv("MQTT_PASSWORD", "" )
 mqtt_password = os.getenv("MQTT_PASSWORD", "" )
 mqtt_topic = os.getenv("MQTT_TOPIC", "CodeProjectAI")
+
+local_tz = pytz.timezone(os.getenv("LOCAL_TZ", "Europe/Amsterdam"))
 
 polling_interval_seconds = float(os.getenv("POLLING_INTERVAL_SECONDS", "0.5" ))
 
@@ -50,39 +53,51 @@ def connect_mqtt(mqttclientid, mqttBroker, mqttPort ):
     client.username_pw_set(mqtt_user, mqtt_password)
     client.on_connect = on_connect
     client.connect(mqttBroker, mqttPort)
-    print(f"connection to mqtt Successful {mqttBroker}:{mqttPort}")
+    current_datetime = datetime.datetime.now(local_tz)
+    formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
+    print(f"{formatted_datetime} connection to mqtt Successful {mqttBroker}:{mqttPort}")
     return client
 
-def send_mqtt(client, mqtt_topic, message):
-  result = client.publish(mqtt_topic, message)
-#  result = client.publish(mqtt_topic, json.dumps(json_body))
+def send_mqtt(client, mqtt_topic, msg):
+  result = client.publish(mqtt_topic, msg, 1, retain=True)
   status = result[0]
 
   if status == 0:
-     print(f"Send topic `{mqtt_topic}`")
+     print(f"Send topic `{mqtt_topic}` { msg }")
   else:
      print(f"Failed to send message to topic {mqtt_topic} ")
+
+def new_plate(client, plate):
+  topic = f"homeassistant/binary_sensor/{ plate }"
+  payload["device_class"] = "motion"
+  payload["state_topic"] = f"{ topic }/state"
+  payload["unique_id"] = f"kenteken{ plate }"
+  payload["device"] = {"identifiers": [ f"{ plate }", f"{ known_plates[plate] }" ] }
+  payload["name"] = f"Kenteken { plate }"
+
+  send_mqtt(client, f"{ topic }/config", json.dumps(payload))
 
 print(f"Intervaltime {polling_interval_seconds}")
 
 try:
-  response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr={foscam_user}&pwd={foscam_password}")
+  requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=setSnapConfig&snapPicQuality=2")
+  response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
   img = Image.open(BytesIO(response.content))
   print(f"connection to Foscam camera Successful http://{foscam_host}:{foscam_port}")
 
   try:
-    buf = BytesIO()
-    with img:
-      img.save(buf, 'jpeg')
-      fp = buf.getvalue()
+      buf = BytesIO()
+      with img:
+        img.save(buf, 'jpeg')
+        fp = buf.getvalue()
 
-      response = requests.post(
-        url=f"http://{ai_host}:{ai_port}/v1/vision/detection",
-        files=dict(upload=fp),
-      )
-    print(f"connection to CodeProjec.AI camera Successful {ai_host}:{ai_port}")
+        response = requests.post(
+          url=f"http://{ai_host}:{ai_port}/v1/vision/detection",
+          files=dict(upload=fp),
+        )
+      print(f"connection to CodeProjec.AI camera Successful {ai_host}:{ai_port}")
   except:
-    print(f"connection to CodeProjec.AI camera Failed http://{ai_host}:{ai_port}")
+      print(f"connection to CodeProjec.AI camera Failed http://{ai_host}:{ai_port}")
 except:
   print(f"connection to Foscam camera Failed http://{foscam_host}:{foscam_port}")
 
@@ -104,6 +119,14 @@ reset_counter = 20
 carDetectAlarmState = False
 motionDetectAlarm = False
 humanDetectAlarmState = False
+
+payload = {}
+known_plates["unknown"] = ""
+for plate in known_plates:
+  new_plate(client, plate)
+  topic = f"homeassistant/binary_sensor/{ plate }"
+
+  send_mqtt(client, f"{ topic }/state", "OFF" )
 
 while True:
   response = urllib.request.urlopen(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=getDevState").read()
@@ -135,16 +158,19 @@ while True:
         reset_counter = reset_counter - 1
   else:
     reset_counter = 20
+    for plate in known_plates:
+      topic = f"homeassistant/binary_sensor/{ plate }"
+      send_mqtt(client, f"{ topic }/state", "OFF" )
 
   if humanDetectAlarmState:
-          response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr={foscam_user}&pwd={foscam_password}")
+      response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
+      try:
           img = Image.open(BytesIO(response.content))
-
+#          img = Image.open(BytesIO(response.content))
           buf = BytesIO()
           with img:
-              img.save(buf, 'jpeg')
-              fp = buf.getvalue()
-
+            img.save(buf, 'jpeg')
+            fp = buf.getvalue()
           response = requests.post(
               url=f"http://{ai_host}:{ai_port}/v1/vision/detection",
               files=dict(upload=fp),
@@ -153,7 +179,7 @@ while True:
 
           if (human['count'] > 0):
             for prediction in human['predictions']:
-              current_datetime = datetime.datetime.now()
+              current_datetime = datetime.datetime.now(local_tz)
               formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
               if prediction['label'] == "person":
                 response = requests.post(
@@ -161,16 +187,29 @@ while True:
                   files=dict(upload=fp),
                 )
                 face = response.json()
+                json_body = {}
+
                 if human_last_name != f"{face['faces']}":
-                  send_mqtt(client, f"{mqtt_topic}/faces", f"{face['faces']}")
-                  img.save(f"/media/face_{formatted_datetime}.jpg") # Save the image
                   human_last_name = f"{face['faces']}"
+                  json_body['name'] = f"{face['faces']}"
+#                  img.save(f"/media/{human_last_name}_{formatted_datetime}.jpg".replace("'", "") ) # Save the image
+#                  send_mqtt(client, f"{mqtt_topic}/faces", f"{human_last_name}")
                 else:
+                  json_body['name'] = "unknown"
                   human_last_name = "unknown"
-                  img.save(f"/media/face_{formatted_datetime}.jpg") # Save the image
+
+                img.save(f"/media/face_{formatted_datetime}.jpg".replace("'", "") ) # Save the image
+                json_body['filename'] = f"/media/face_{formatted_datetime}.jpg".replace("'", "")
+
+                send_mqtt(client, f"{mqtt_topic}/faces", json.dumps(json_body))
+      except Exception as e: 
+        print(f"Error reading snapshot")
+        print(e)
+        print(response)
 
   if carDetectAlarmState:
-          response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&{foscam_user}&pwd={foscam_password}")
+      try:
+          response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?{foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
           img = Image.open(BytesIO(response.content))
 
           buf = BytesIO()
@@ -186,22 +225,45 @@ while True:
           plates = response.json()
           plate = None
 
-          current_datetime = datetime.datetime.now()
+          current_datetime = datetime.datetime.now(local_tz)
           formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
-          if len(plates["predictions"]) > 0 and plates["predictions"][0].get("plate"):
-              plate = str(plates["predictions"][0]["plate"]).replace(" ", "")
-              score = plates["predictions"][0]["confidence"]
 
-          if plate is None:
-              plate = f"{plate}"
-              img.save(f"/media/car_{formatted_datetime}.jpg") # Save the image
-          else:
-              plate = f"{known_plates[plate]} - {plate}"
-              img.save(f"/media/car_{formatted_datetime}_{plate}.jpg") # Save the image
+          if len(plates["predictions"]) > 0:
+            for prediction in plates['predictions']:
+              print(f"car prediction: {prediction})")
+              json_body = {}
 
-          if car_last_name != plate:
-            send_mqtt(client, f"{mqtt_topic}/car", f"{known_plates[plate]}")
-            car_last_name = plate
+              if prediction.get("plate"):
+                plate = str(plates[prediction["plate"]]).replace(" ", "")
 
+              plate_org = plate
+              if plate is None:
+                plate = f"{plate}"
+                img.save(f"/media/car_{formatted_datetime}.jpg".replace("'", "")) # Save the image
+                json_body['plate'] = plate
+                json_body['filename'] = f"/media/car_{formatted_datetime}.jpg".replace("'", "")
+              else:
+                json_body['plate'] = plate_org
+                if not known_plates.has_key(plate):
+                  known_plates[plate] = "Onbekend kenteken"
+                  new_plate(client, plate)
+                plate = f"{known_plates[plate]} - {plate}"
+
+                img.save(f"/media/car_{formatted_datetime}_{plate}.jpg".replace("'", "")) # Save the image
+                json_body['plate'] = plate
+                json_body['description'] = f"{known_plates[plate]}"
+                json_body['filename'] = f"/media/car_{formatted_datetime}_{plate}.jpg".replace("'", "")
+
+              if (car_last_name != plate_org) and not (plate_org == "") :
+                send_mqtt(client, f"{mqtt_topic}/car", json.dumps(json_body))
+                car_last_name = plate_org
+
+                topic = f"homeassistant/binary_sensor/{ plate_org }"
+                send_mqtt(client, f"{ topic }/state", "ON" )
+
+      except Exception as e:
+        print(f"Error reading snapshot")
+        print(e)
+        print(response)
   time.sleep(polling_interval_seconds)
 
