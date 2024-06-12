@@ -15,13 +15,14 @@ ENV MQTT_PASSWORD   admin
 ENV MQTT_TOPIC      CodeProjectAI
 ENV POLLING_INTERVAL_SECONDS .5
 
-
-
-WORKDIR /usr/src/app
+WORKDIR /
 
 COPY requirements.txt ./
+COPY ./license_plate.txt /config/license_plate.txt
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
 
 CMD [ "python", "-u", "./license_plate.py" ]

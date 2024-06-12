@@ -12,6 +12,8 @@ import yaml
 import paho.mqtt.client as mqtt
 import random
 
+import datetime
+
 ai_host = os.getenv("AI_HOST", "" )
 ai_port = int(os.getenv("AI_PORT", "32168"))
 
@@ -29,9 +31,13 @@ mqtt_topic = os.getenv("MQTT_TOPIC", "CodeProjectAI")
 
 polling_interval_seconds = float(os.getenv("POLLING_INTERVAL_SECONDS", "0.5" ))
 
-known_plates = {
-    "N465VH": "Lynk & co",
-}
+known_plates = {}
+with open("/config/license_plate.txt") as myfile:
+    for line in myfile:
+        name, var = line.partition("=")[::2]
+        known_plates[name.strip()] = var.replace("\n", "")
+
+print(f"{known_plates}")
 
 def connect_mqtt(mqttclientid, mqttBroker, mqttPort ):
     def on_connect(client, userdata, flags, reason_code, properties):
@@ -92,7 +98,8 @@ car_last = ""
 human_last_name = ""
 car_last_name = ""
 
-counter = 20
+car_counter = 20
+reset_counter = 20
 
 carDetectAlarmState = False
 motionDetectAlarm = False
@@ -103,22 +110,33 @@ while True:
   root_node = ET.fromstring(response)
 
   motion_now = root_node.findall('motionDetectAlarm')[0].text
-  if (motion_now != motion_last):
-    motion_last = motion_now
-    motionDetectAlarm = (motion_last == "2")
-
+#  if (motion_now != motion_last):
+#    motion_last = motion_now
+#    motionDetectAlarm = (motion_last == "2")
 
   car_now = root_node.findall('carDetectAlarmState')[0].text
-  if (car_now != car_last):
-    car_last = car_now
-    carDetectAlarmState = (car_last == "2")
+#  if (car_now != car_last):
+#    car_last = car_now
+#    carDetectAlarmState = (car_last == "2")
 
   human_now = root_node.findall('humanDetectAlarmState')[0].text
-  if (human_now != human_last):
-    human_last = human_now
-    humanDetectAlarmState = (human_last == "2")
+#  if (human_now != human_last):
+#    human_last = human_now
+#    humanDetectAlarmState = (human_last == "2")
 
-  if True or humanDetectAlarmState:
+  carDetectAlarmState = (root_node.findall('carDetectAlarmState')[0].text == "2")
+  humanDetectAlarmState = (root_node.findall('humanDetectAlarmState')[0].text == "2")
+
+  if not humanDetectAlarmState and not carDetectAlarmState:
+     if reset_counter <= 0:
+        human_last_name = ""
+        car_last_name = ""
+     else:
+        reset_counter = reset_counter - 1
+  else:
+    reset_counter = 20
+
+  if humanDetectAlarmState:
           response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr={foscam_user}&pwd={foscam_password}")
           img = Image.open(BytesIO(response.content))
 
@@ -135,23 +153,21 @@ while True:
 
           if (human['count'] > 0):
             for prediction in human['predictions']:
+              current_datetime = datetime.datetime.now()
+              formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
               if prediction['label'] == "person":
                 response = requests.post(
                   url=f"http://{ai_host}:{ai_port}/v1/vision/face/list",
                   files=dict(upload=fp),
                 )
                 face = response.json()
-                # print(f"face: {face['faces']}")
                 if human_last_name != f"{face['faces']}":
                   send_mqtt(client, f"{mqtt_topic}/faces", f"{face['faces']}")
-                  img.save(f"/media/face_{counter}.jpg") # Save the image
+                  img.save(f"/media/face_{formatted_datetime}.jpg") # Save the image
                   human_last_name = f"{face['faces']}"
-
-                  # amount of pictures
-                  if counter <= 0:
-                    counter = 20
-                  else:
-                    counter = counter - 1
+                else:
+                  human_last_name = "unknown"
+                  img.save(f"/media/face_{formatted_datetime}.jpg") # Save the image
 
   if carDetectAlarmState:
           response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&{foscam_user}&pwd={foscam_password}")
@@ -170,16 +186,18 @@ while True:
           plates = response.json()
           plate = None
 
+          current_datetime = datetime.datetime.now()
+          formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
           if len(plates["predictions"]) > 0 and plates["predictions"][0].get("plate"):
               plate = str(plates["predictions"][0]["plate"]).replace(" ", "")
               score = plates["predictions"][0]["confidence"]
-              #print(f"Checking plate: {plate} in {known_plates.keys()}")
-
 
           if plate is None:
               plate = f"{plate}"
+              img.save(f"/media/car_{formatted_datetime}.jpg") # Save the image
           else:
               plate = f"{known_plates[plate]} - {plate}"
+              img.save(f"/media/car_{formatted_datetime}_{plate}.jpg") # Save the image
 
           if car_last_name != plate:
             send_mqtt(client, f"{mqtt_topic}/car", f"{known_plates[plate]}")
