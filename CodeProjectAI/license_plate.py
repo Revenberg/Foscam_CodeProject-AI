@@ -30,7 +30,7 @@ mqtt_password = os.getenv("MQTT_PASSWORD", "" )
 mqtt_password = os.getenv("MQTT_PASSWORD", "" )
 mqtt_topic = os.getenv("MQTT_TOPIC", "CodeProjectAI")
 
-local_tz = pytz.timezone(os.getenv("LOCAL_TZ", "Europe/Amsterdam"))
+local_tz = pytz.timezone(os.getenv("TZ", "Europe/Amsterdam"))
 
 polling_interval_seconds = float(os.getenv("POLLING_INTERVAL_SECONDS", "0.5" ))
 
@@ -69,11 +69,16 @@ def send_mqtt(client, mqtt_topic, msg):
 
 def new_plate(client, plate):
   topic = f"homeassistant/binary_sensor/{ plate }"
+
+  payload = {}
+  payload["name"] = f"Kenteken { plate }"
   payload["device_class"] = "motion"
   payload["state_topic"] = f"{ topic }/state"
   payload["unique_id"] = f"kenteken{ plate }"
-  payload["device"] = {"identifiers": [ f"{ plate }", f"{ known_plates[plate] }" ] }
-  payload["name"] = f"Kenteken { plate }"
+
+  payload["device"] = {}
+  payload["device"]["identifiers"] = [ f"{ plate }" ]
+  payload["device"]["name"] = known_plates[plate]
 
   send_mqtt(client, f"{ topic }/config", json.dumps(payload))
 
@@ -120,8 +125,7 @@ carDetectAlarmState = False
 motionDetectAlarm = False
 humanDetectAlarmState = False
 
-payload = {}
-known_plates["unknown"] = ""
+known_plates["unknown"] = "unknown"
 for plate in known_plates:
   new_plate(client, plate)
   topic = f"homeassistant/binary_sensor/{ plate }"
@@ -150,17 +154,22 @@ while True:
   carDetectAlarmState = (root_node.findall('carDetectAlarmState')[0].text == "2")
   humanDetectAlarmState = (root_node.findall('humanDetectAlarmState')[0].text == "2")
 
-  if not humanDetectAlarmState and not carDetectAlarmState:
-     if reset_counter <= 0:
+  if not humanDetectAlarmState:
+     if reset_counter == 1:
         human_last_name = ""
-        car_last_name = ""
-     else:
+     if reset_counter > 0:
         reset_counter = reset_counter - 1
   else:
     reset_counter = 20
-    for plate in known_plates:
-      topic = f"homeassistant/binary_sensor/{ plate }"
-      send_mqtt(client, f"{ topic }/state", "OFF" )
+
+  if not carDetectAlarmState:
+    if car_counter == 1
+      car_last_name = ""
+      for plate in known_plates:
+        topic = f"homeassistant/binary_sensor/{ plate }"
+        send_mqtt(client, f"{ topic }/state", "OFF" )
+    if car_counter > 0
+      car_counter = car_counter -1
 
   if humanDetectAlarmState:
       response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
@@ -209,7 +218,7 @@ while True:
 
   if carDetectAlarmState:
       try:
-          response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?{foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
+          response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
           img = Image.open(BytesIO(response.content))
 
           buf = BytesIO()
@@ -263,6 +272,7 @@ while True:
 
       except Exception as e:
         print(f"Error reading snapshot")
+        print(response)
         print(e)
         print(response)
   time.sleep(polling_interval_seconds)

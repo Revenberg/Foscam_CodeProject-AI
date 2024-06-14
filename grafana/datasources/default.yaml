@@ -1,0 +1,24 @@
+{
+  "id":1,
+  "uid":"cdomw5wslgh6oc",
+  "orgId":1,"name":"influxdb",
+  "type":"influxdb",
+  "typeName":"InfluxDB",
+  "typeLogoUrl":"public/app/plugins/datasource/influxdb/img/influxdb_logo.svg",
+  "access":"proxy","url":"http://192.168.2.80:8086",
+  "user":"","database":"",
+  "secureJsonData":
+    "password": "mySecretPlainPassword",
+  "basicAuth":false,
+  "isDefault":true,
+  "jsonData":
+  {
+    "dbName":"ha",
+    "defaultBucket":"ha",
+    "httpMode":"POST",
+    "organization":"ha",
+    "version":"Flux"
+  },
+  "readOnly":false
+}
+

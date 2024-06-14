@@ -1,0 +1,4 @@
+midea-beautiful-air
+msmart
+midea-inventor-lib
+midea_python_client

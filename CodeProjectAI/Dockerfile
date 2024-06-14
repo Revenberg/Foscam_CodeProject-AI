@@ -15,14 +15,22 @@ ENV MQTT_PASSWORD   admin
 ENV MQTT_TOPIC      CodeProjectAI
 ENV POLLING_INTERVAL_SECONDS .5
 
+ENV TZ Etc/UTC
+
+ENV PUID 1000
+ENV PGID 1000
+
+RUN groupadd -g $PGID nonroot
+RUN adduser --system --no-create-home -u $PUID nonroot
+RUN usermod -a -G nonroot nonroot
+
 WORKDIR /
 
 COPY requirements.txt ./
-COPY ./license_plate.txt /config/license_plate.txt
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+USER nonroot
 COPY . .
-
-
+COPY ./license_plate.txt /config/license_plate.txt
 CMD [ "python", "-u", "./license_plate.py" ]

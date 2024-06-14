@@ -1,0 +1,151 @@
+---
+#networks:
+#  lan_access:
+#    driver: bridge
+
+services:
+#  ftp:
+#    container_name: ftp
+#    restart: unless-stopped
+#    volumes:
+#      - /var/docker/media:/ftp/ftp
+#    ports:
+#      - "21:21"
+#      - "21000-21010:21000-21010"
+#    environment:
+#      - "USERS=sander|rev61272|/ftp/ftp|1000|1000"
+#      - "ADDRESS=192.168.2.80"
+#    image: 'delfer/alpine-ftp-server:latest'
+
+  Foscam_CodeProjectAI:
+    image: revenberg/codeprojectai:latest
+    container_name: Foscam_CodeProjectAI
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - AI_HOST=192.168.2.80
+      - AI_PORT=32168
+      - FOSCAM_HOST=192.168.2.32
+      - FOSCAM_PORT=88
+      - FOSCAM_USER=sander
+      - FOSCAM_PASSWORD=rev61272
+      - MQTT_HOST=192.168.2.80
+      - MQTT_PORT=1883
+      - MQTT_USER=sander
+      - MQTT_PASSWORD=rev61272
+      - MQTT_TOPIC=CodeProjectAI
+    volumes:
+      - /var/docker/foscam_codeproject-ai/license_plate.txt:/config/license_plate.txt
+      - /var/docker/media:/media
+    depends_on:
+      - mosquitto
+      - homeassistant
+
+  mosquitto:
+    image: eclipse-mosquitto
+    hostname: mosquitto
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - /var/docker/mosquitto:/etc/mosquitto
+      - /var/docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  CodeProjectAI:
+    image: codeproject/ai-server:arm64
+    hostname: codeproject-ai-server
+    container_name: codeproject-ai-server
+    volumes:
+      - /var/docker/codeprojectai-server/opt:/opt/codeproject/ai
+      - /var/docker/codeprojectai-server/data:/etc/codeproject/ai
+      - /var/docker/codeprojectai-server/modules:/app/modules
+    restart: unless-stopped
+    ports:
+      - "32168:32168"
+    environment:
+      - TZ=Europe/Amsterdam
+
+#  SenseAI-Server:
+#    image: codeproject/senseai-server:arm64
+#    hostname: senseai
+#    container_name: senseai-server
+#    volumes:
+#      - /var/docker/SenseAI:/usr/share/CodeProject/SenseAI
+#    ports:
+#      - "5000:5000"
+
+  homeassistant:
+    image: lscr.io/linuxserver/homeassistant:latest
+    container_name: homeassistant
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - /var/docker/home-assistance/config:/config
+      - /var/docker/media:/media
+    depends_on:
+      - mosquitto
+    ports:
+      - 80:8123 #optional
+#    devices:
+#      - /path/to/device:/path/to/device #optional
+    restart: unless-stopped
+
+  webserver:
+    image: nginx:latest
+    hostname: nginx
+    container_name: nginx
+    volumes:
+      - /var/docker/nginx/html:/usr/share/nginx/html
+    ports:
+      - "8080:80"
+
+#  influxdb:
+#    image: influxdb:latest
+#    networks:
+#      - proxy
+#    container_name: influxdb
+#    env_file:
+#      - /var/docker/influxdb/env.influxdb
+#    ports:
+#      - "8083:8083"
+#      - "8086:8086"
+#      - "8090:8090"
+#      - "2003:2003"
+#    volumes:
+#      - /var/docker/influxdb/:/var/lib/influxdb:rw
+#      - /etc/localtime:/etc/localtime:ro
+#    restart: unless-stopped
+#    environment:
+#      - DOCKER_INFLUXDB_INIT_MODE=setup
+#      - DOCKER_INFLUXDB_INIT_USERNAME=sander
+#      - DOCKER_INFLUXDB_INIT_PASSWORD=rev61272
+#      - DOCKER_INFLUXDB_INIT_ORG=homeassistance
+#      - DOCKER_INFLUXDB_INIT_BUCKET=ha
+#      - DOCKER_INFLUXDB_INIT_RETENTION=1w
+#      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=GENERATED_AUTH_TOKEN
+
+#  grafana:
+#    container_name: grafana
+#    depends_on:
+#      - influxdb
+#    image: grafana/grafana:latest
+#    networks:
+#      - proxy
+#    ports:
+#      - "3000:3000"
+#    user: "1000"
+#    environment:
+#      - GF_INSTALL_PLUGINS=grafana-clock-panel,briangann-gauge-panel,natel-plotly-panel,grafana-simple-json-datasource
+#      - GF_SECURITY_ADMIN_USER=sander
+#      - GF_SECURITY_ADMIN_PASSWORD=rev61272
+#    volumes:
+#      - /var/docker/grafana/custom.ini:/etc/grafana/grafana.ini
+ #     - /var/docker/grafana/:/var/lib/grafana
+
+
