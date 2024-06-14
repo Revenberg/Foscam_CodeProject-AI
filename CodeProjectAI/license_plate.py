@@ -82,6 +82,22 @@ def new_plate(client, plate):
 
   send_mqtt(client, f"{ topic }/config", json.dumps(payload))
 
+def new_face(client, face):
+  topic = f"homeassistant/binary_sensor/{ face }"
+
+  payload = {}
+  payload["name"] = f"Gezicht { face }"
+  payload["device_class"] = "motion"
+  payload["state_topic"] = f"{ topic }/state"
+  payload["unique_id"] = f"Gezicht{ face }"
+
+  payload["device"] = {}
+  payload["device"]["identifiers"] = [ f"{ face }" ]
+  payload["device"]["name"] = f"{ face }"
+
+  send_mqtt(client, f"{ topic }/config", json.dumps(payload))
+  send_mqtt(client, f"{ topic }/state", "ON" )
+
 print(f"Intervaltime {polling_interval_seconds}")
 
 try:
@@ -137,45 +153,35 @@ while True:
   root_node = ET.fromstring(response)
 
   motion_now = root_node.findall('motionDetectAlarm')[0].text
-#  if (motion_now != motion_last):
-#    motion_last = motion_now
-#    motionDetectAlarm = (motion_last == "2")
-
   car_now = root_node.findall('carDetectAlarmState')[0].text
-#  if (car_now != car_last):
-#    car_last = car_now
-#    carDetectAlarmState = (car_last == "2")
-
   human_now = root_node.findall('humanDetectAlarmState')[0].text
-#  if (human_now != human_last):
-#    human_last = human_now
-#    humanDetectAlarmState = (human_last == "2")
-
   carDetectAlarmState = (root_node.findall('carDetectAlarmState')[0].text == "2")
   humanDetectAlarmState = (root_node.findall('humanDetectAlarmState')[0].text == "2")
 
   if not humanDetectAlarmState:
      if reset_counter == 1:
+        topic = f"homeassistant/binary_sensor/{ human_last_name }"
+        send_mqtt(client, f"{ topic }/state", "OFF" )
         human_last_name = ""
+
      if reset_counter > 0:
         reset_counter = reset_counter - 1
   else:
     reset_counter = 20
 
   if not carDetectAlarmState:
-    if car_counter == 1
+    if car_counter == 1:
       car_last_name = ""
       for plate in known_plates:
         topic = f"homeassistant/binary_sensor/{ plate }"
         send_mqtt(client, f"{ topic }/state", "OFF" )
-    if car_counter > 0
+    if car_counter > 0:
       car_counter = car_counter -1
 
   if humanDetectAlarmState:
       response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
       try:
           img = Image.open(BytesIO(response.content))
-#          img = Image.open(BytesIO(response.content))
           buf = BytesIO()
           with img:
             img.save(buf, 'jpeg')
@@ -195,23 +201,17 @@ while True:
                   url=f"http://{ai_host}:{ai_port}/v1/vision/face/list",
                   files=dict(upload=fp),
                 )
-                face = response.json()
-                json_body = {}
+                face_resp = response.json()
 
-                if human_last_name != f"{face['faces']}":
-                  human_last_name = f"{face['faces']}"
-                  json_body['name'] = f"{face['faces']}"
-#                  img.save(f"/media/{human_last_name}_{formatted_datetime}.jpg".replace("'", "") ) # Save the image
-#                  send_mqtt(client, f"{mqtt_topic}/faces", f"{human_last_name}")
-                else:
-                  json_body['name'] = "unknown"
+                face = f"{face_resp['faces']}".replace("[", "").replace("]", "")
+                if face == "":
                   human_last_name = "unknown"
 
-                img.save(f"/media/face_{formatted_datetime}.jpg".replace("'", "") ) # Save the image
-                json_body['filename'] = f"/media/face_{formatted_datetime}.jpg".replace("'", "")
+                if human_last_name != face:
+                   img.save(f"/media/face_{formatted_datetime}.jpg".replace("'", "") ) # Save the image
+                   new_face(client, human_last_name)
 
-                send_mqtt(client, f"{mqtt_topic}/faces", json.dumps(json_body))
-      except Exception as e: 
+      except Exception as e:
         print(f"Error reading snapshot")
         print(e)
         print(response)
