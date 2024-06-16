@@ -30,9 +30,9 @@ mqtt_password = os.getenv("MQTT_PASSWORD", "" )
 mqtt_password = os.getenv("MQTT_PASSWORD", "" )
 mqtt_topic = os.getenv("MQTT_TOPIC", "CodeProjectAI")
 
-local_tz = pytz.timezone(os.getenv("TZ", "Europe/Amsterdam"))
-
 polling_interval_seconds = float(os.getenv("POLLING_INTERVAL_SECONDS", "0.5" ))
+
+print( f"{os.getenv("TZ", "Europe/Amsterdam")}")
 
 known_plates = {}
 with open("/config/license_plate.txt") as myfile:
@@ -53,7 +53,7 @@ def connect_mqtt(mqttclientid, mqttBroker, mqttPort ):
     client.username_pw_set(mqtt_user, mqtt_password)
     client.on_connect = on_connect
     client.connect(mqttBroker, mqttPort)
-    current_datetime = datetime.datetime.now(local_tz)
+    current_datetime = datetime.datetime.now(pytz.timezone(os.getenv("TZ", "Europe/Amsterdam")))
     formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
     print(f"{formatted_datetime} connection to mqtt Successful {mqttBroker}:{mqttPort}")
     return client
@@ -61,14 +61,15 @@ def connect_mqtt(mqttclientid, mqttBroker, mqttPort ):
 def send_mqtt(client, mqtt_topic, msg):
   result = client.publish(mqtt_topic, msg, 1, retain=True)
   status = result[0]
-
+  current_datetime = datetime.datetime.now(pytz.timezone(os.getenv("TZ", "Europe/Amsterdam")))
+  formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
   if status == 0:
-     print(f"Send topic `{mqtt_topic}` { msg }")
+     print(f"{formatted_datetime} Send topic `{mqtt_topic}` { msg }")
   else:
-     print(f"Failed to send message to topic {mqtt_topic} ")
+     print(f"{formatted_datetime} Failed to send message to topic {mqtt_topic} ")
 
 def new_plate(client, plate):
-  topic = f"homeassistant/binary_sensor/{ plate }"
+  topic = f"homeassistant/binary_sensor/plate{ plate }"
 
   payload = {}
   payload["name"] = f"Kenteken { plate }"
@@ -77,25 +78,31 @@ def new_plate(client, plate):
   payload["unique_id"] = f"kenteken{ plate }"
 
   payload["device"] = {}
+  payload["device"]["manufacturer"] = "localdetection"
+  payload["device"]["model"] = "plate"
   payload["device"]["identifiers"] = [ f"{ plate }" ]
   payload["device"]["name"] = known_plates[plate]
 
   send_mqtt(client, f"{ topic }/config", json.dumps(payload))
+  time.sleep(1)
 
 def new_face(client, face):
-  topic = f"homeassistant/binary_sensor/{ face }"
+  topic = f"homeassistant/binary_sensor/face{ face }"
 
   payload = {}
   payload["name"] = f"Gezicht { face }"
   payload["device_class"] = "motion"
   payload["state_topic"] = f"{ topic }/state"
-  payload["unique_id"] = f"Gezicht{ face }"
+  payload["manufacturer"] = "localdetection"
 
   payload["device"] = {}
+  payload["device"]["manufacturer"] = "localdetection"
+  payload["device"]["model"] = "face"
   payload["device"]["identifiers"] = [ f"{ face }" ]
   payload["device"]["name"] = f"{ face }"
 
   send_mqtt(client, f"{ topic }/config", json.dumps(payload))
+  time.sleep(1)
   send_mqtt(client, f"{ topic }/state", "ON" )
 
 print(f"Intervaltime {polling_interval_seconds}")
@@ -131,22 +138,25 @@ motion_last = ""
 human_last = ""
 car_last = ""
 
-human_last_name = ""
+human_last_name = "onbekend"
 car_last_name = ""
 
-car_counter = 20
-reset_counter = 20
+car_counter = 120
+reset_counter = 120
 
 carDetectAlarmState = False
 motionDetectAlarm = False
 humanDetectAlarmState = False
 
-known_plates["unknown"] = "unknown"
+#known_plates["onbekend"] = "onbekend"
+
 for plate in known_plates:
   new_plate(client, plate)
-  topic = f"homeassistant/binary_sensor/{ plate }"
+  topic = f"homeassistant/binary_sensor/plate{ plate }"
 
   send_mqtt(client, f"{ topic }/state", "OFF" )
+
+new_face(client, "onbekend")
 
 while True:
   response = urllib.request.urlopen(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=getDevState").read()
@@ -155,32 +165,35 @@ while True:
   motion_now = root_node.findall('motionDetectAlarm')[0].text
   car_now = root_node.findall('carDetectAlarmState')[0].text
   human_now = root_node.findall('humanDetectAlarmState')[0].text
+
   carDetectAlarmState = (root_node.findall('carDetectAlarmState')[0].text == "2")
   humanDetectAlarmState = (root_node.findall('humanDetectAlarmState')[0].text == "2")
 
   if not humanDetectAlarmState:
      if reset_counter == 1:
-        topic = f"homeassistant/binary_sensor/{ human_last_name }"
+        topic = f"homeassistant/binary_sensor/face{ human_last_name }"
         send_mqtt(client, f"{ topic }/state", "OFF" )
         human_last_name = ""
 
      if reset_counter > 0:
         reset_counter = reset_counter - 1
   else:
-    reset_counter = 20
+    reset_counter = 120
 
   if not carDetectAlarmState:
     if car_counter == 1:
+      topic = f"homeassistant/binary_sensor/plate{ car_last_name }"
+      send_mqtt(client, f"{ topic }/state", "OFF" )
       car_last_name = ""
-      for plate in known_plates:
-        topic = f"homeassistant/binary_sensor/{ plate }"
-        send_mqtt(client, f"{ topic }/state", "OFF" )
+
     if car_counter > 0:
       car_counter = car_counter -1
 
   if humanDetectAlarmState:
-      response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
+    for x in range(10):
       try:
+          response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
+
           img = Image.open(BytesIO(response.content))
           buf = BytesIO()
           with img:
@@ -194,7 +207,7 @@ while True:
 
           if (human['count'] > 0):
             for prediction in human['predictions']:
-              current_datetime = datetime.datetime.now(local_tz)
+              current_datetime = datetime.datetime.now(pytz.timezone(os.getenv("TZ", "Europe/Amsterdam")))
               formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
               if prediction['label'] == "person":
                 response = requests.post(
@@ -205,19 +218,20 @@ while True:
 
                 face = f"{face_resp['faces']}".replace("[", "").replace("]", "")
                 if face == "":
-                  human_last_name = "unknown"
+                  human_last_name = "onbekend"
 
                 if human_last_name != face:
                    img.save(f"/media/face_{formatted_datetime}.jpg".replace("'", "") ) # Save the image
                    new_face(client, human_last_name)
 
       except Exception as e:
-        print(f"Error reading snapshot")
+        print(f"Fase Error reading snapshot")
         print(e)
         print(response)
 
   if carDetectAlarmState:
       try:
+        for x in range(10):
           response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
           img = Image.open(BytesIO(response.content))
 
@@ -234,46 +248,37 @@ while True:
           plates = response.json()
           plate = None
 
-          current_datetime = datetime.datetime.now(local_tz)
+          current_datetime = datetime.datetime.now(pytz.timezone(os.getenv("TZ", "Europe/Amsterdam")))
           formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
 
           if len(plates["predictions"]) > 0:
-            for prediction in plates['predictions']:
-              print(f"car prediction: {prediction})")
-              json_body = {}
+            for prediction in plates["predictions"]:
+#              print( f"{prediction}")
+#              if prediction.get("plate") is None:
+                  plate = prediction["plate"]
+                  if plate is None:
+                    plate = ""
+                  else:
+                    plate = str(prediction["plate"]).replace(" ", "")
+                    plate_org = plate
 
-              if prediction.get("plate"):
-                plate = str(plates[prediction["plate"]]).replace(" ", "")
+                    if not known_plates.has_key(plate):
+                      known_plates[plate] = "onbekend kenteken"
+                      new_plate(client, plate)
+                      img.save(f"/media/car_{formatted_datetime}_{ plate }.jpg".replace("'", "")) # Save the image
+                    else:
+                      plate = f"{known_plates[plate]} - {plate}"
+                      img.save(f"/media/car_{formatted_datetime}_{plate}.jpg".replace("'", "")) # Save the image
 
-              plate_org = plate
-              if plate is None:
-                plate = f"{plate}"
-                img.save(f"/media/car_{formatted_datetime}.jpg".replace("'", "")) # Save the image
-                json_body['plate'] = plate
-                json_body['filename'] = f"/media/car_{formatted_datetime}.jpg".replace("'", "")
-              else:
-                json_body['plate'] = plate_org
-                if not known_plates.has_key(plate):
-                  known_plates[plate] = "Onbekend kenteken"
-                  new_plate(client, plate)
-                plate = f"{known_plates[plate]} - {plate}"
+                    if (car_last_name != plate_org) and not (plate_org == "") :
+                      car_last_name = plate_org
 
-                img.save(f"/media/car_{formatted_datetime}_{plate}.jpg".replace("'", "")) # Save the image
-                json_body['plate'] = plate
-                json_body['description'] = f"{known_plates[plate]}"
-                json_body['filename'] = f"/media/car_{formatted_datetime}_{plate}.jpg".replace("'", "")
-
-              if (car_last_name != plate_org) and not (plate_org == "") :
-                send_mqtt(client, f"{mqtt_topic}/car", json.dumps(json_body))
-                car_last_name = plate_org
-
-                topic = f"homeassistant/binary_sensor/{ plate_org }"
-                send_mqtt(client, f"{ topic }/state", "ON" )
+                      topic = f"homeassistant/binary_sensor/plate{ plate_org }"
+                      send_mqtt(client, f"{ topic }/state", "ON" )
 
       except Exception as e:
-        print(f"Error reading snapshot")
+        print(f"Car Error reading snapshot")
         print(response)
         print(e)
-        print(response)
   time.sleep(polling_interval_seconds)
 
