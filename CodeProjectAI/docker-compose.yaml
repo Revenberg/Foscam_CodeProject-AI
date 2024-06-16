@@ -13,7 +13,7 @@ services:
 #      - "21:21"
 #      - "21000-21010:21000-21010"
 #    environment:
-#      - "USERS=sander|rev61272|/ftp/ftp|1000|1000"
+#      - "USERS=sander|<<passwrd>>|/ftp/ftp|1000|1000"
 #      - "ADDRESS=192.168.2.80"
 #    image: 'delfer/alpine-ftp-server:latest'
 
@@ -24,17 +24,17 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Etc/UTC
+      - TZ=Europe/Amsterdam
       - AI_HOST=192.168.2.80
       - AI_PORT=32168
       - FOSCAM_HOST=192.168.2.32
       - FOSCAM_PORT=88
       - FOSCAM_USER=sander
-      - FOSCAM_PASSWORD=rev61272
+      - FOSCAM_PASSWORD=<<passwrd>>
       - MQTT_HOST=192.168.2.80
       - MQTT_PORT=1883
       - MQTT_USER=sander
-      - MQTT_PASSWORD=rev61272
+      - MQTT_PASSWORD=<<passwrd>>
       - MQTT_TOPIC=CodeProjectAI
     volumes:
       - /var/docker/foscam_codeproject-ai/license_plate.txt:/config/license_plate.txt
@@ -124,7 +124,7 @@ services:
 #    environment:
 #      - DOCKER_INFLUXDB_INIT_MODE=setup
 #      - DOCKER_INFLUXDB_INIT_USERNAME=sander
-#      - DOCKER_INFLUXDB_INIT_PASSWORD=rev61272
+#      - DOCKER_INFLUXDB_INIT_PASSWORD=<<passwrd>>
 #      - DOCKER_INFLUXDB_INIT_ORG=homeassistance
 #      - DOCKER_INFLUXDB_INIT_BUCKET=ha
 #      - DOCKER_INFLUXDB_INIT_RETENTION=1w
@@ -143,7 +143,7 @@ services:
 #    environment:
 #      - GF_INSTALL_PLUGINS=grafana-clock-panel,briangann-gauge-panel,natel-plotly-panel,grafana-simple-json-datasource
 #      - GF_SECURITY_ADMIN_USER=sander
-#      - GF_SECURITY_ADMIN_PASSWORD=rev61272
+#      - GF_SECURITY_ADMIN_PASSWORD=<<passwrd>>
 #    volumes:
 #      - /var/docker/grafana/custom.ini:/etc/grafana/grafana.ini
  #     - /var/docker/grafana/:/var/lib/grafana
@@ -182,7 +182,7 @@ services:
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_INSTALL_PLUGINS=grafana-clock-panel,briangann-gauge-panel,natel-plotly-panel,grafana-simple-json-datasource
       - GF_SECURITY_ADMIN_USER=sander
-      - GF_SECURITY_ADMIN_PASSWORD=rev61272
+      - GF_SECURITY_ADMIN_PASSWORD=<<passwrd>>
 
   influxdb_cli:
     links:
@@ -196,12 +196,12 @@ services:
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=sander
-      - DOCKER_INFLUXDB_INIT_PASSWORD=rev61272
+      - DOCKER_INFLUXDB_INIT_PASSWORD=<<passwrd>>
       - DOCKER_INFLUXDB_INIT_ORG=ha
       - DOCKER_INFLUXDB_INIT_BUCKET=home-assistant
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=test
     entrypoint: ["./entrypoint.sh"]
-    command: sh -c 'sleep 5; influx setup -name sander --force --bucket "home-assistant" --token "grafanatoken" --org "ha" --username=sander --password=rev61272 --host=http://192.168.2.80:8086 --force'
-    restart: on-failure: 2
+    command: sh -c 'sleep 5; influx setup -name sander --force --bucket "home-assistant" --token "grafanatoken" --org "ha" --username=sander --password=<<passwrd>> --host=http://192.168.2.80:8086 --force'
+    restart: on-failure:2
     depends_on:
       - influxdb
