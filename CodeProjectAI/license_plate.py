@@ -11,6 +11,7 @@ import urllib.request
 import yaml
 import paho.mqtt.client as mqtt
 import random
+import re
 
 import datetime
 import pytz
@@ -22,6 +23,7 @@ foscam_host = os.getenv("FOSCAM_HOST", "" )
 foscam_port = int(os.getenv("FOSCAM_PORT", "88"))
 foscam_user = os.getenv("FOSCAM_USER", "" )
 foscam_password = os.getenv("FOSCAM_PASSWORD", "" )
+foscam_snapPicQuality = os.getenv("FOSCAM_SNAPPICQUALITY", "2" )
 
 mqtt_host = os.getenv("MQTT_HOST", "")
 mqtt_port = int(os.getenv("MQTT_PORT", "1883" ) )
@@ -108,7 +110,7 @@ def new_face(client, face):
 print(f"Intervaltime {polling_interval_seconds}")
 
 try:
-  requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=setSnapConfig&snapPicQuality=2")
+  requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=setSnapConfig&snapPicQuality={foscam_snapPicQuality}")
   response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
   img = Image.open(BytesIO(response.content))
   print(f"connection to Foscam camera Successful http://{foscam_host}:{foscam_port}")
@@ -234,12 +236,10 @@ while True:
         for x in range(10):
           response = requests.get(f"http://{foscam_host}:{foscam_port}/cgi-bin/CGIProxy.fcgi?usr={foscam_user}&pwd={foscam_password}&cmd=snapPicture2")
           img = Image.open(BytesIO(response.content))
-
           buf = BytesIO()
           with img:
               img.save(buf, 'jpeg')
               fp = buf.getvalue()
-
           response = requests.post(
               url=f"http://{ai_host}:{ai_port}/v1/vision/alpr",
               files=dict(upload=fp),
@@ -250,19 +250,21 @@ while True:
 
           current_datetime = datetime.datetime.now(pytz.timezone(os.getenv("TZ", "Europe/Amsterdam")))
           formatted_datetime = current_datetime.strftime("%Y-%m-%d %H:%M")
+          if plates["predictions"] is None:
+             print("Geen kentekenplaat")
+          else:
+            if len(plates["predictions"]) == 0:
+               print("Geen kentekenplaat")
 
-          if len(plates["predictions"]) > 0:
-            for prediction in plates["predictions"]:
-#              print( f"{prediction}")
-#              if prediction.get("plate") is None:
+            if len(plates["predictions"]) > 0:
+              for prediction in plates["predictions"]:
                   plate = prediction["plate"]
                   if plate is None:
                     plate = ""
                   else:
-                    plate = str(prediction["plate"]).replace(" ", "")
+                    plate = re.sub(r'[^a-zA-Z0-9]', '', str(prediction["plate"]))
                     plate_org = plate
-
-                    if not known_plates.has_key(plate):
+                    if known_plates.get(plate) is None:
                       known_plates[plate] = "onbekend kenteken"
                       new_plate(client, plate)
                       img.save(f"/media/car_{formatted_datetime}_{ plate }.jpg".replace("'", "")) # Save the image
@@ -271,6 +273,9 @@ while True:
                       img.save(f"/media/car_{formatted_datetime}_{plate}.jpg".replace("'", "")) # Save the image
 
                     if (car_last_name != plate_org) and not (plate_org == "") :
+                      topic = f"homeassistant/binary_sensor/plate{ plate }"
+                      topic = f"homeassistant/binary_sensor/plate{ car_last_name }"
+
                       car_last_name = plate_org
 
                       topic = f"homeassistant/binary_sensor/plate{ plate_org }"
@@ -281,4 +286,3 @@ while True:
         print(response)
         print(e)
   time.sleep(polling_interval_seconds)
-
